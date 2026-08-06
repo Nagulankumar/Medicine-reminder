@@ -15,6 +15,7 @@
     <div class="brand">
       <span class="brand-icon" aria-hidden="true">&#9877;</span>
       <span class="brand-name">MedRemind</span>
+      <button id="notifyBtn" class="notify-btn" type="button">&#128276; Enable Reminders</button>
     </div>
     <div class="datetime">
       <span class="date">{{ current_date }}</span>
@@ -229,6 +230,81 @@ function openEditDialog(med) {
 
   document.getElementById('editDialog').showModal();
 }
+
+// ------------------------------------------------------------------
+// BROWSER NOTIFICATIONS
+// Polls the server every 30 seconds to check which medicines are
+// currently due, and fires a real browser notification for any
+// medicine we haven't already notified about this session.
+// ------------------------------------------------------------------
+
+var notifyBtn = document.getElementById('notifyBtn');
+var alreadyNotified = new Set();
+var pollTimer = null;
+
+function updateNotifyButton() {
+  if (!('Notification' in window)) {
+    notifyBtn.textContent = '🔕 Not supported on this browser';
+    notifyBtn.disabled = true;
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    notifyBtn.textContent = '🔔 Reminders On';
+    notifyBtn.classList.add('notify-on');
+  } else {
+    notifyBtn.textContent = '🔔 Enable Reminders';
+    notifyBtn.classList.remove('notify-on');
+  }
+}
+
+async function checkDueMedicines() {
+  try {
+    const res = await fetch('/api/due');
+    const data = await res.json();
+    (data.due || []).forEach(function (m) {
+      if (!alreadyNotified.has(m.id)) {
+        alreadyNotified.add(m.id);
+        new Notification('Medicine due: ' + m.name, {
+          body: m.dosage + ' — scheduled ' + m.time,
+          icon: '',
+          tag: 'medremind-' + m.id,
+        });
+      }
+    });
+  } catch (err) {
+    // Silently ignore — next poll will try again
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  checkDueMedicines();
+  pollTimer = setInterval(checkDueMedicines, 30000);
+}
+
+if ('Notification' in window) {
+  updateNotifyButton();
+  if (Notification.permission === 'granted') {
+    startPolling();
+  }
+}
+
+notifyBtn.addEventListener('click', function () {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    startPolling();
+    return;
+  }
+  Notification.requestPermission().then(function (permission) {
+    updateNotifyButton();
+    if (permission === 'granted') {
+      new Notification('MedRemind reminders enabled', {
+        body: "We'll alert you here when a medicine is due.",
+      });
+      startPolling();
+    }
+  });
+});
 </script>
 
 <footer class="page-footer">
