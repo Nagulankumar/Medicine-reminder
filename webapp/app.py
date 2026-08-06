@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 import json
 import os
@@ -265,6 +265,35 @@ def dashboard():
         taken_count=len(taken),
         user_email=email,
     )
+
+
+@app.route("/api/due")
+@login_required
+def api_due():
+    """
+    Returns the medicines that are currently due, as JSON.
+    The browser polls this every so often to decide whether
+    to fire a notification — it never fires anything itself,
+    it just reports the current state using the server's clock.
+    """
+    email = session["username"]
+    medicines = get_user_medicines(email)
+    now = now_ist()
+    current_time = now.strftime("%H:%M")
+    today_short = now.strftime("%a")
+    due, _, _, _ = classify(medicines, current_time, today_short)
+
+    return jsonify({
+        "due": [
+            {
+                "id": m["id"],
+                "name": m["name"],
+                "dosage": m["dosage"],
+                "time": format_time_12hr(m["time"]),
+            }
+            for m in due
+        ]
+    })
 
 
 @app.route("/add", methods=["POST"])
